@@ -19,7 +19,7 @@ class voletProp extends eqLogic {
 		$return['launchable'] = 'ok';
 		$return['state'] = 'nok';
 		foreach(eqLogic::byType('voletProp') as $Volet){
-			if($Volet->getIsEnable() && $Volet->getConfiguration('cmdMoveState')!= '' && $Volet->getConfiguration('cmdStopState') != '' && $Volet->getConfiguration('cmdEnd') != ''){
+			if($Volet->getIsEnable() && $Volet->getConfiguration('UpStateCmd') != '' && $Volet->getConfiguration('DownStateCmd') != ''&& $Volet->getConfiguration('StopStateCmd') != '' && $Volet->getConfiguration('cmdEnd') != ''){
 				$listener = listener::byClassAndFunction('voletProp', 'pull', array('Volets_id' => $Volet->getId()));
 				if (!is_object($listener))
 					return $return;
@@ -51,8 +51,28 @@ class voletProp extends eqLogic {
 		$Volet = eqLogic::byId($_option['Volets_id']);
 		$detectedCmd = cmd::byId($_option['event_id']);
 		if (is_object($detectedCmd) && is_object($Volet) && $Volet->getIsEnable()) {
+			
+			
 			switch($_option['event_id']){
-				case str_replace('#','',$Volet->getConfiguration('cmdMoveState')):
+				case str_replace('#','',$Volet->getConfiguration('StopStateCmd')):
+				case str_replace('#','',$Volet->getConfiguration('UpStateCmd')):
+				case str_replace('#','',$Volet->getConfiguration('DownStateCmd')):
+					$isUp=$Volet->getConfiguration('UpStateCmd').$Volet->getConfiguration('UpStateOperande').$Volet->getConfiguration('UpStateValue');
+					$isDown=$Volet->getConfiguration('DownStateCmd').$Volet->getConfiguration('DownStateOperande').$Volet->getConfiguration('DownStateValue');
+					$isStop=$Volet->getConfiguration('StopStateCmd').$Volet->getConfiguration('StopStateOperande').$Volet->getConfiguration('StopStateValue');
+					if($Volet->EvaluateCondition($isUp))
+						cache::set('voletProp::ChangeState::'.$Volet->getId(),true, 0);
+					elseif($Volet->EvaluateCondition($isDown))
+						cache::set('voletProp::ChangeState::'.$Volet->getId(),false, 0);
+					elseif($Volet->EvaluateCondition($isStop)){
+						$Move=cache::byKey('voletProp::Move::'.$Volet->getId());
+						cache::set('voletProp::ChangeStateStop::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
+						if(is_object($Move) && $Move->getValue(false))
+							$Volet->UpdateHauteur();
+						cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
+						break;
+					}else
+						break;
 					log::add('voletProp','debug',$Volet->getHumanName().' Detection d\'un mouvement');
 					$Move=cache::byKey('voletProp::Move::'.$Volet->getId());
 					if(is_object($Move) && $Move->getValue(false)){
@@ -62,16 +82,7 @@ class voletProp extends eqLogic {
 						break;
 					}
 					cache::set('voletProp::Move::'.$Volet->getId(),true, 0);
-					cache::set('voletProp::ChangeState::'.$Volet->getId(),$_option['value'], 0);
 					cache::set('voletProp::ChangeStateStart::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
-					
-				break;
-				case str_replace('#','',$Volet->getConfiguration('cmdStopState')):
-					$Move=cache::byKey('voletProp::Move::'.$Volet->getId());
-					cache::set('voletProp::ChangeStateStop::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
-					if(is_object($Move) && $Move->getValue(false))
-						$Volet->UpdateHauteur();
-					cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
 				break;
 				case str_replace('#','',$Volet->getConfiguration('cmdEnd')):
 					if($_option['value'])
@@ -79,6 +90,26 @@ class voletProp extends eqLogic {
 				break;
 			}
 		}
+	}
+	public function boolToText($value){
+		if (is_bool($value)) {
+			if ($value) 
+				return __('Vrai', __FILE__);
+			else 
+				return __('Faux', __FILE__);
+		} else 
+			return $value;
+	}
+	public function EvaluateCondition($Condition){
+		$_scenario = null;
+		$expression = scenarioExpression::setTags($Condition, $_scenario, true);
+		$message = __('Evaluation de la condition : ['.jeedom::toHumanReadable($Condition).'][', __FILE__) . trim($expression) . '] = ';
+		$result = evaluate($expression);
+		$message .=$this->boolToText($result);
+		log::add('voletProp','info',$this->getHumanName().$message);
+		if(!$result)
+			return false;		
+		return true;
 	}
     	public function UpdateHauteur() {
 		$ChangeState = cache::byKey('voletProp::ChangeState::'.$this->getId())->getValue(false);
@@ -99,11 +130,6 @@ class voletProp extends eqLogic {
 			$Hauteur=100-$Hauteur;
 		log::add('voletProp','debug',$this->getHumanName().' Le volet est a '.$Hauteur.'%');
 		$this->checkAndUpdateCmd('hauteur',$Hauteur);
-		$Synchronisation = cache::byKey('voletProp::Synchronisation::'.$this->getId());
-		if(is_object($Synchronisation) && !$Synchronisation->getValue(false)){
-			$this->execPropVolet($Synchronisation->getValue(false));
-			$Synchronisation->remove();
-		}
 	}
     	public function execPropVolet($Hauteur) {
 		$Stop=cmd::byId(str_replace('#','',$this->getConfiguration('cmdStop')));
@@ -115,7 +141,13 @@ class voletProp extends eqLogic {
 		$Up=cmd::byId(str_replace('#','',$this->getConfiguration('cmdUp')));
 		if(!is_object($Up))
 			return false;
-		$Stop->execute(null);
+		if($this->getConfiguration('Synchronisation')){
+			$Up->execute(null);
+			sleep($this->getConfiguration('Ttotal'));
+			$Stop->execute(null);		
+			if($this->getConfiguration('UpStateCmd') != '' && $this->getConfiguration('DownStateCmd') != ''&& $this->getConfiguration('StopStateCmd') != '')
+				$this->checkAndUpdateCmd('hauteur',100);
+		}
 		//cache::set('voletProp::Move::'.$this->getId(),false, 0);
 		$HauteurVolet=$this->getCmd(null,'hauteur')->execCmd();
 		if($this->getConfiguration('Inverser'))
@@ -140,7 +172,7 @@ class voletProp extends eqLogic {
 		sleep($temps);
 		$Stop->execute(null);
 		log::add('voletProp','debug',$this->getHumanName().' Le volet est a '.$Hauteur.'%');
-		if ($this->getConfiguration('cmdMoveState') == '' && $this->getConfiguration('cmdStopState') == '' )			
+		if($this->getConfiguration('UpStateCmd') != '' && $this->getConfiguration('DownStateCmd') != ''&& $this->getConfiguration('StopStateCmd') != '')		
 			$this->checkAndUpdateCmd('hauteur',$Hauteur);
 	}
     	public function TpsAction($Hauteur, $Decol) {
@@ -158,18 +190,23 @@ class voletProp extends eqLogic {
 	}
 	public function StartListener() {
 		if($this->getIsEnable()){
-			if(($this->getConfiguration('cmdMoveState') != '' && $this->getConfiguration('cmdStopState') != '') || $this->getConfiguration('cmdEnd') != ''){
+			if(($this->getConfiguration('UpStateCmd') != '' && $this->getConfiguration('DownStateCmd') != ''&& $this->getConfiguration('StopStateCmd') != '') || $this->getConfiguration('cmdEnd') != ''){
 				$listener = listener::byClassAndFunction('voletProp', 'pull', array('Volets_id' => $this->getId()));
 				if (!is_object($listener))
 				    $listener = new listener();
 				$listener->setClass('voletProp');
 				$listener->setFunction('pull');
 				$listener->setOption(array('Volets_id' => $this->getId()));
-				$listener->emptyEvent();				
-				if ($this->getConfiguration('cmdMoveState') != '')
-					$listener->addEvent($this->getConfiguration('cmdMoveState'));
-				if ($this->getConfiguration('cmdStopState') != '')
-					$listener->addEvent($this->getConfiguration('cmdStopState'));
+				$listener->emptyEvent();	
+				$UpStateCmd=$this->getConfiguration('UpStateCmd');
+				$DownStateCmd=$this->getConfiguration('DownStateCmd');
+				$StopStateCmd=$this->getConfiguration('StopStateCmd');
+				if ($UpStateCmd != '')
+					$listener->addEvent($UpStateCmd);
+				if ($DownStateCmd != '' && $DownStateCmd != $UpStateCmd)
+					$listener->addEvent($DownStateCmd);
+				if ($StopStateCmd != '' && $StopStateCmd != $UpStateCmd && $StopStateCmd != $DownStateCmd)
+					$listener->addEvent($StopStateCmd);
 				if ($this->getConfiguration('cmdEnd') != '')
 					$listener->addEvent($this->getConfiguration('cmdEnd'));
 				$listener->save();
@@ -231,14 +268,7 @@ class voletPropCmd extends cmd {
 					$cmd->execute(null);
 			break;
 			case "position":
-				if($this->getEqLogic()->getConfiguration('Synchronisation')){
-					cache::set('voletProp::Synchronisation::'.$this->getEqLogic()->getId(),$_options['slider'], 0);
-					$cmd=cmd::byId(str_replace('#','',$this->getEqLogic()->getConfiguration('cmdDown')));
-					if(is_object($cmd))
-						$cmd->execute(null);
-				}else{
-					$this->getEqLogic()->execPropVolet($_options['slider']);
-				}
+				$this->getEqLogic()->execPropVolet($_options['slider']);
 			break;
 		}
 	}
