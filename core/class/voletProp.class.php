@@ -48,47 +48,69 @@ class voletProp extends eqLogic {
 			$Volet->StopListener();
 		}
 	}
-	public static function pull($_option) {
-		log::add('voletProp','debug','Evenement sur les etat'.json_encode($_option));
+	public static function Up($_option) {
+		log::add('voletProp','debug','Detection sur le listener Up : '.json_encode($_option));
 		$Volet = eqLogic::byId($_option['Volets_id']);
 		$detectedCmd = cmd::byId($_option['event_id']);
 		if (is_object($detectedCmd) && is_object($Volet) && $Volet->getIsEnable()) {
-			switch($_option['event_id']){
-				case str_replace('#','',$Volet->getConfiguration('StopStateCmd')):
-				case str_replace('#','',$Volet->getConfiguration('UpStateCmd')):
-				case str_replace('#','',$Volet->getConfiguration('DownStateCmd')):
-					$isUp=$Volet->getConfiguration('UpStateCmd').$Volet->getConfiguration('UpStateOperande').$Volet->getConfiguration('UpStateValue');
-					$isDown=$Volet->getConfiguration('DownStateCmd').$Volet->getConfiguration('DownStateOperande').$Volet->getConfiguration('DownStateValue');
-					$isStop=$Volet->getConfiguration('StopStateCmd').$Volet->getConfiguration('StopStateOperande').$Volet->getConfiguration('StopStateValue');
-					if($Volet->EvaluateCondition($isUp))
-						cache::set('voletProp::ChangeState::'.$Volet->getId(),true, 0);
-					elseif($Volet->EvaluateCondition($isDown))
-						cache::set('voletProp::ChangeState::'.$Volet->getId(),false, 0);
-					elseif($Volet->EvaluateCondition($isStop)){
-						$Move=cache::byKey('voletProp::Move::'.$Volet->getId());
-						cache::set('voletProp::ChangeStateStop::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
-						if(is_object($Move) && $Move->getValue(false))
-							$Volet->UpdateHauteur();
-						cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
-						break;
-					}else
-						break;
-					log::add('voletProp','debug',$Volet->getHumanName().' Detection d\'un mouvement');
-					$Move=cache::byKey('voletProp::Move::'.$Volet->getId());
-					if(is_object($Move) && $Move->getValue(false)){
-						log::add('voletProp','debug',$Volet->getHumanName().' Mouvement en cours => Stop');
-						$Volet->UpdateHauteur();
-						cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
-						break;
-					}
+			log::add('voletProp','info',$Volet->getHumanName().$detectedCmd->getHumanName());
+			if($this->getConfiguration('cmdStop') != '' && cache::byKey('voletProp::Move::'.$Volet->getId())->getValue(false) && cache::byKey('voletProp::ChangeState::'.$Volet->getId())->getValue(false)){
+				cache::set('voletProp::ChangeStateStop::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
+				$Volet->UpdateHauteur();
+				cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
+			}else{
+				$isUp=$Volet->getConfiguration('UpStateCmd').$Volet->getConfiguration('UpStateOperande').$Volet->getConfiguration('UpStateValue');
+				if($Volet->EvaluateCondition($isUp)){
+					cache::set('voletProp::ChangeState::'.$Volet->getId(),true, 0);
 					cache::set('voletProp::Move::'.$Volet->getId(),true, 0);
-					cache::set('voletProp::ChangeStateStart::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
-				break;
-				case str_replace('#','',$Volet->getConfiguration('cmdEnd')):
-					if($_option['value'])
-						$Volet->checkAndUpdateCmd('hauteur',0);
-				break;
+				}
 			}
+		}
+	}
+	public static function Down($_option) {
+		log::add('voletProp','debug','Detection sur le listener Down : '.json_encode($_option));
+		$Volet = eqLogic::byId($_option['Volets_id']);
+		$detectedCmd = cmd::byId($_option['event_id']);
+		if (is_object($detectedCmd) && is_object($Volet) && $Volet->getIsEnable()) {
+			log::add('voletProp','info',$Volet->getHumanName().$detectedCmd->getHumanName());
+			if($this->getConfiguration('cmdStop') != '' && cache::byKey('voletProp::Move::'.$Volet->getId())->getValue(false) && !cache::byKey('voletProp::ChangeState::'.$Volet->getId())->getValue(false)){
+				cache::set('voletProp::ChangeStateStop::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
+				$Volet->UpdateHauteur();
+				cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
+			}else{
+				$isDown=$Volet->getConfiguration('DownStateCmd').$Volet->getConfiguration('DownStateOperande').$Volet->getConfiguration('DownStateValue');
+				if($Volet->EvaluateCondition($isDown)){
+					cache::set('voletProp::ChangeState::'.$Volet->getId(),false, 0);
+					cache::set('voletProp::Move::'.$Volet->getId(),true, 0);
+				}
+			}
+		}
+	}
+	public static function Stop($_option) {
+		log::add('voletProp','debug','Detection sur le listener Stop : '.json_encode($_option));
+		$Volet = eqLogic::byId($_option['Volets_id']);
+		$detectedCmd = cmd::byId($_option['event_id']);
+		if (is_object($detectedCmd) && is_object($Volet) && $Volet->getIsEnable()) {
+			log::add('voletProp','info',$Volet->getHumanName().$detectedCmd->getHumanName());
+			$isStop=$Volet->getConfiguration('StopStateCmd').$Volet->getConfiguration('StopStateOperande').$Volet->getConfiguration('StopStateValue');
+			if($Volet->EvaluateCondition($isStop)){
+				$Move=cache::byKey('voletProp::Move::'.$Volet->getId());
+				cache::set('voletProp::ChangeStateStop::'.$Volet->getId(),strtotime($detectedCmd->getCollectDate(time())), 0);
+				if(is_object($Move) && $Move->getValue(false)){
+					$Volet->UpdateHauteur();
+					cache::set('voletProp::Move::'.$Volet->getId(),false, 0);
+				}
+			}
+		}
+	}
+	public static function End($_option) {
+		log::add('voletProp','debug','Detection sur le listener End : '.json_encode($_option));
+		$Volet = eqLogic::byId($_option['Volets_id']);
+		$detectedCmd = cmd::byId($_option['event_id']);
+		if (is_object($detectedCmd) && is_object($Volet) && $Volet->getIsEnable()) {
+			log::add('voletProp','info',$Volet->getHumanName().$detectedCmd->getHumanName());
+			if($_option['value'])
+				$Volet->checkAndUpdateCmd('hauteur',0);
 		}
 	}
 	public function boolToText($value){
@@ -132,9 +154,11 @@ class voletProp extends eqLogic {
 		$this->checkAndUpdateCmd('hauteur',$Hauteur);
 	}
     	public function CheckSynchro($Hauteur) {
-		$Stop=cmd::byId(str_replace('#','',$this->getConfiguration('cmdStop')));
-		if(!is_object($Stop))
-			return false;
+		if($this->getConfiguration('cmdStop') != ''){
+			$Stop=cmd::byId(str_replace('#','',$this->getConfiguration('cmdStop')));
+			if(!is_object($Stop))
+				return false;
+		}
 		$Down=cmd::byId(str_replace('#','',$this->getConfiguration('cmdDown')));
 		if(!is_object($Down))
 			return false;
@@ -145,6 +169,8 @@ class voletProp extends eqLogic {
 			if($Synchronisation == '100' && $Hauteur == 100){
 				log::add('voletProp','info',$this->getHumanName().'[Synchronisation] Montée complete');
 				$Up->execute(null);
+				if(!isset($Stop))
+					$Stop=$Down;
 				sleep($this->getConfiguration('Ttotal'));
 				$Stop->execute(null);		
 				if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == ''&& $this->getConfiguration('StopStateCmd') == '')
@@ -154,6 +180,8 @@ class voletProp extends eqLogic {
 			if($Synchronisation == '0' && $Hauteur == 0){
 				log::add('voletProp','info',$this->getHumanName().'[Synchronisation] Descente complete');
 				$Down->execute(null);
+				if(!isset($Stop))
+					$Stop=$Up;
 				sleep($this->getConfiguration('Ttotal'));
 				$Stop->execute(null);		
 				if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == ''&& $this->getConfiguration('StopStateCmd') == '')
@@ -163,6 +191,8 @@ class voletProp extends eqLogic {
 			if($Synchronisation == 'all'){
 				log::add('voletProp','info',$this->getHumanName().'[Synchronisation] Montée complete');
 				$Up->execute(null);
+				if(!isset($Stop))
+					$Stop=$Down;
 				sleep($this->getConfiguration('Ttotal'));
 				$Stop->execute(null);		
 				if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == ''&& $this->getConfiguration('StopStateCmd') == '')
@@ -174,16 +204,17 @@ class voletProp extends eqLogic {
     	public function execPropVolet($Hauteur) {
 		if(!$this->CheckSynchro($Hauteur))
 			return false;
-		$Stop=cmd::byId(str_replace('#','',$this->getConfiguration('cmdStop')));
-		if(!is_object($Stop))
-			return false;
+		if($this->getConfiguration('cmdStop') != ''){
+			$Stop=cmd::byId(str_replace('#','',$this->getConfiguration('cmdStop')));
+			if(!is_object($Stop))
+				return false;
+		}
 		$Down=cmd::byId(str_replace('#','',$this->getConfiguration('cmdDown')));
 		if(!is_object($Down))
 			return false;
 		$Up=cmd::byId(str_replace('#','',$this->getConfiguration('cmdUp')));
 		if(!is_object($Up))
 			return false;
-		cache::set('voletProp::Move::'.$this->getId(),false, 0);
 		$HauteurVolet=$this->getCmd(null,'hauteur')->execCmd();
 		if($this->getConfiguration('Inverser'))
 			$HauteurVolet=100-$HauteurVolet;
@@ -192,22 +223,30 @@ class voletProp extends eqLogic {
 		$Decol=false;
 		if($Hauteur == 0 || $HauteurVolet == 0)
 			$Decol=true;
+		if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == '' && $this->getConfiguration('StopStateCmd') == '')
+			cache::set('voletProp::Move::'.$this->getId(),true, 0);
 		if($HauteurVolet > $Hauteur){
 			$Delta=$HauteurVolet-$Hauteur;
 			$temps=$this->TpsAction($Delta,$Decol);
 			$Down->execute(null);
+			if(!isset($Stop))
+				$Stop=$Up;
 			log::add('voletProp','debug',$this->getHumanName().' Nous allons descendre le volet de '.$Delta.'%');
 		}else{
 			$Delta=$Hauteur-$HauteurVolet;
 			$temps=$this->TpsAction($Delta,$Decol);
 			$Up->execute(null);
+			if(!isset($Stop))
+				$Stop=$Up;
 			log::add('voletProp','debug',$this->getHumanName().' Nous allons monter le volet de '.$Delta.'%');
 		}
 		sleep($temps);
 		$Stop->execute(null);
-		log::add('voletProp','debug',$this->getHumanName().' Le volet est a '.$Hauteur.'%');
-		if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == ''&& $this->getConfiguration('StopStateCmd') == '')		
+		if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == '' && $this->getConfiguration('StopStateCmd') == ''){		
 			$this->checkAndUpdateCmd('hauteur',$Hauteur);
+			log::add('voletProp','debug',$this->getHumanName().' Le volet est a '.$Hauteur.'%');
+			cache::set('voletProp::Move::'.$this->getId(),false, 0);
+		}
 	}
     	public function TpsAction($Hauteur, $Decol) {
 		$TpsGlobal=$this->getConfiguration('Ttotal');
@@ -221,27 +260,65 @@ class voletProp extends eqLogic {
 		$listener = listener::byClassAndFunction('voletProp', 'pull', array('Volets_id' => $this->getId()));
 		if (is_object($listener))
 			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'Up', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'Down', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'Stop', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'End', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
 	}
 	public function StartListener() {
 		if($this->getIsEnable()){
-			if(($this->getConfiguration('UpStateCmd') != '' && $this->getConfiguration('DownStateCmd') != ''&& $this->getConfiguration('StopStateCmd') != '') || $this->getConfiguration('cmdEnd') != ''){
-				$listener = listener::byClassAndFunction('voletProp', 'pull', array('Volets_id' => $this->getId()));
+			$listener = listener::byClassAndFunction('voletProp', 'Up', array('Volets_id' => $this->getId()));
+			$UpStateCmd=$this->getConfiguration('UpStateCmd');
+			if ($UpStateCmd != ''){
 				if (!is_object($listener))
 				    $listener = new listener();
 				$listener->setClass('voletProp');
-				$listener->setFunction('pull');
+				$listener->setFunction('Up');
 				$listener->setOption(array('Volets_id' => $this->getId()));
 				$listener->emptyEvent();	
-				$UpStateCmd=$this->getConfiguration('UpStateCmd');
-				$DownStateCmd=$this->getConfiguration('DownStateCmd');
-				$StopStateCmd=$this->getConfiguration('StopStateCmd');
-				if ($UpStateCmd != '')
-					$listener->addEvent($UpStateCmd);
-				if ($DownStateCmd != '' && $DownStateCmd != $UpStateCmd)
+				$listener->addEvent($UpStateCmd);
+				$listener->save();			
+			}
+			$listener = listener::byClassAndFunction('voletProp', 'Down', array('Volets_id' => $this->getId()));
+			$DownStateCmd=$this->getConfiguration('DownStateCmd');
+			if ($DownStateCmd != ''){
+				if (!is_object($listener))
+				    $listener = new listener();
+				$listener->setClass('voletProp');
+				$listener->setFunction('Down');
+				$listener->setOption(array('Volets_id' => $this->getId()));
+				$listener->emptyEvent();	
 					$listener->addEvent($DownStateCmd);
-				if ($StopStateCmd != '' && $StopStateCmd != $UpStateCmd && $StopStateCmd != $DownStateCmd)
-					$listener->addEvent($StopStateCmd);
-				if ($this->getConfiguration('cmdEnd') != '')
+				$listener->save();			
+			}
+			$listener = listener::byClassAndFunction('voletProp', 'Stop', array('Volets_id' => $this->getId()));
+			$StopStateCmd=$this->getConfiguration('StopStateCmd');
+			if ($StopStateCmd != ''){
+				if (!is_object($listener))
+				    $listener = new listener();
+				$listener->setClass('voletProp');
+				$listener->setFunction('Stop');
+				$listener->setOption(array('Volets_id' => $this->getId()));
+				$listener->emptyEvent();	
+				$listener->addEvent($StopStateCmd);
+				$listener->save();				
+			}
+			$listener = listener::byClassAndFunction('voletProp', 'End', array('Volets_id' => $this->getId()));
+			if ($this->getConfiguration('cmdEnd') != ''){
+				if (!is_object($listener))
+				    $listener = new listener();
+				$listener->setClass('voletProp');
+				$listener->setFunction('End');
+				$listener->setOption(array('Volets_id' => $this->getId()));
+				$listener->emptyEvent();	
 					$listener->addEvent($this->getConfiguration('cmdEnd'));
 				$listener->save();
 			}
@@ -282,6 +359,21 @@ class voletProp extends eqLogic {
 		$this->AddCommande("Stop","stop","action", 'other',1,null,null,'<i class="fa fa-stop"></i>','FLAP_STOP');
 		$this->StartListener();
 	}	
+	
+	public function preRemove() {
+		$listener = listener::byClassAndFunction('voletProp', 'Up', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'Down', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'Stop', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+		$listener = listener::byClassAndFunction('voletProp', 'End', array('Volets_id' => $this->getId()));
+		if (is_object($listener))
+			$listener->remove();
+	}
 }
 class voletPropCmd extends cmd {
     public function execute($_options = null) {
@@ -303,14 +395,23 @@ class voletPropCmd extends cmd {
 				cache::set('voletProp::ChangeStateStart::'.$this->getEqLogic()->getId(),time(), 0);
 			break;
 			case "stop":
-				$cmd=cmd::byId(str_replace('#','',$this->getEqLogic()->getConfiguration('cmdStop')));
-				if(is_object($cmd))
-					$cmd->execute(null);
-				cache::set('voletProp::Move::'.$this->getEqLogic()->getId(),false, 0);
-				if(cache::byKey('voletProp::ChangeState::'.$this->getEqLogic()->getId())->getValue(false)){
+				if($this->getEqLogic()->getConfiguration('cmdStop') != ''){
+					$cmd=cmd::byId(str_replace('#','',$this->getEqLogic()->getConfiguration('cmdStop')));
+					if(is_object($cmd))
+						$cmd->execute(null);
+				}else{
+					if(cache::byKey('voletProp::ChangeState::'.$this->getEqLogic()->getId())->getValue(false))
+						$cmd=cmd::byId(str_replace('#','',$this->getEqLogic()->getConfiguration('cmdUp')));
+					else
+						$cmd=cmd::byId(str_replace('#','',$this->getEqLogic()->getConfiguration('cmdDown')));
+					if(is_object($cmd))
+						$cmd->execute(null);
+				}				
+				if(cache::byKey('voletProp::Move::'.$this->getEqLogic()->getId())->getValue(false)){
 					cache::set('voletProp::ChangeStateStop::'.$this->getEqLogic()->getId(),time(), 0);
 					$this->getEqLogic()->UpdateHauteur();
 				}
+				cache::set('voletProp::Move::'.$this->getEqLogic()->getId(),false, 0);
 			break;
 			case "position":
 				$this->getEqLogic()->execPropVolet($_options['slider']);
