@@ -140,8 +140,12 @@ class voletProp extends eqLogic {
 		$ChangeStateStart = cache::byKey('voletProp::ChangeStateStart::'.$this->getId())->getValue(time());
 		$ChangeStateStop = cache::byKey('voletProp::ChangeStateStop::'.$this->getId())->getValue(time());		
 		$Tps=$ChangeStateStop-$ChangeStateStart;
-		$Hauteur=$Tps*100/$this->getConfiguration('Ttotal');
+		$TpsGlobal=$this->getConfiguration('Ttotal');
+		
 		$HauteurActuel=$this->getCmd(null,'hauteur')->execCmd();
+		if($HauteurActuel != 0)
+			$TpsGlobal-=$this->getConfiguration('Tdecol');
+		$Hauteur=$Tps*100/$TpsGlobal;
 		if($ChangeState)
 			$Hauteur=round($HauteurActuel+$Hauteur);
 		else
@@ -150,8 +154,6 @@ class voletProp extends eqLogic {
 			$Hauteur=0;
 		if($Hauteur>100)
 			$Hauteur=100;
-		if($this->getConfiguration('Inverser'))
-			$Hauteur=100-$Hauteur;
 		log::add('voletProp','debug',$this->getHumanName().' Le volet est a '.$Hauteur.'%');
 		$this->checkAndUpdateCmd('hauteur',$Hauteur);
 	}
@@ -221,8 +223,6 @@ class voletProp extends eqLogic {
 		if(!is_object($Up))
 			return false;
 		$HauteurVolet=$this->getCmd(null,'hauteur')->execCmd();
-		if($this->getConfiguration('Inverser'))
-			$HauteurVolet=100-$HauteurVolet;
 		if($HauteurVolet == $Hauteur)
 			return;
 		$Decol=false;
@@ -247,7 +247,7 @@ class voletProp extends eqLogic {
 				$Stop=$Up;
 			log::add('voletProp','debug',$this->getHumanName().' Nous allons monter le volet de '.$Delta.'%');
 		}
-		sleep($temps);
+		usleep($temps);
 		$Stop->execute(null);
 		if($this->getConfiguration('UpStateCmd') == '' && $this->getConfiguration('DownStateCmd') == ''){		
 			cache::set('voletProp::ChangeStateStop::'.$this->getId(),time(), 0);
@@ -259,10 +259,10 @@ class voletProp extends eqLogic {
 		$TpsGlobal=$this->getConfiguration('Ttotal');
 		if(!$Decol)
 			$TpsGlobal-=$this->getConfiguration('Tdecol');
-		$tps=round($TpsGlobal*$Hauteur/100);		
-		if($tps <= $this->getConfiguration('delaisMini')) 
-			$tps = $this->getConfiguration('delaisMini');
-		log::add('voletProp','debug',$this->getHumanName().' Temps d\'action '.$tps.'s');
+		$tps=round(($TpsGlobal*$Hauteur/100)*1000000);		
+		if($tps <= $this->getConfiguration('delaisMini')*1000000) 
+			$tps = $this->getConfiguration('delaisMini')*1000000;
+		log::add('voletProp','debug',$this->getHumanName().' Temps d\'action '.$tps.'µs');
 		return $tps;
 	}
 	public function StopListener() {
